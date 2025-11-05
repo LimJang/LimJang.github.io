@@ -1,78 +1,165 @@
-import Image from "next/image";
-import { Geist, Geist_Mono } from "next/font/google";
+import { useEffect, useRef } from 'react';
 
-const geistSans = Geist({
-  variable: "--font-geist-sans",
-  subsets: ["latin"],
-});
+const Home = () => {
+  const sceneRef = useRef(null);
+  const engineRef = useRef(null);
 
-const geistMono = Geist_Mono({
-  variable: "--font-geist-mono",
-  subsets: ["latin"],
-});
+  useEffect(() => {
+    // Dynamically import Matter.js only on the client side
+    import('matter-js').then(Matter => {
+      const { Engine, Render, Runner, Composite, Bodies, Events, Mouse, MouseConstraint } = Matter;
 
-export default function Home() {
-  return (
-    <div
-      className={`${geistSans.className} ${geistMono.className} flex min-h-screen items-center justify-center bg-zinc-50 font-sans dark:bg-black`}
-    >
-      <main className="flex min-h-screen w-full max-w-3xl flex-col items-center justify-between py-32 px-16 bg-white dark:bg-black sm:items-start">
-        <Image
-          className="dark:invert"
-          src="/next.svg"
-          alt="Next.js logo"
-          width={100}
-          height={20}
-          priority
-        />
-        <div className="flex flex-col items-center gap-6 text-center sm:items-start sm:text-left">
-          <h1 className="max-w-xs text-3xl font-semibold leading-10 tracking-tight text-black dark:text-zinc-50">
-            To get started, edit the index.js file.
-          </h1>
-          <p className="max-w-md text-lg leading-8 text-zinc-600 dark:text-zinc-400">
-            Looking for a starting point or more instructions? Head over to{" "}
-            <a
-              href="https://vercel.com/templates?framework=next.js&utm_source=create-next-app&utm_medium=default-template-tw&utm_campaign=create-next-app"
-              className="font-medium text-zinc-950 dark:text-zinc-50"
-            >
-              Templates
-            </a>{" "}
-            or the{" "}
-            <a
-              href="https://nextjs.org/learn?utm_source=create-next-app&utm_medium=default-template-tw&utm_campaign=create-next-app"
-              className="font-medium text-zinc-950 dark:text-zinc-50"
-            >
-              Learning
-            </a>{" "}
-            center.
-          </p>
-        </div>
-        <div className="flex flex-col gap-4 text-base font-medium sm:flex-row">
-          <a
-            className="flex h-12 w-full items-center justify-center gap-2 rounded-full bg-foreground px-5 text-background transition-colors hover:bg-[#383838] dark:hover:bg-[#ccc] md:w-[158px]"
-            href="https://vercel.com/new?utm_source=create-next-app&utm_medium=default-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            <Image
-              className="dark:invert"
-              src="/vercel.svg"
-              alt="Vercel logomark"
-              width={16}
-              height={16}
-            />
-            Deploy Now
-          </a>
-          <a
-            className="flex h-12 w-full items-center justify-center rounded-full border border-solid border-black/[.08] px-5 transition-colors hover:border-transparent hover:bg-black/[.04] dark:border-white/[.145] dark:hover:bg-[#1a1a1a] md:w-[158px]"
-            href="https://nextjs.org/docs/pages/getting-started?utm_source=create-next-app&utm_medium=default-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            Documentation
-          </a>
-        </div>
-      </main>
-    </div>
-  );
-}
+      // --- Engine and Renderer Setup ---
+      const engine = Engine.create({
+        gravity: { y: 1 }, // Standard gravity
+        // Increase iterations to improve accuracy and prevent tunneling
+        positionIterations: 12,
+        velocityIterations: 8,
+      });
+      engineRef.current = engine;
+
+      const container = sceneRef.current;
+      const width = container.clientWidth;
+      const height = container.clientHeight;
+
+      const render = Render.create({
+        element: container,
+        engine: engine,
+        options: {
+          width: width,
+          height: height,
+          wireframes: true, // 8-bit wireframe style
+          background: '#000000', // Black background
+        },
+      });
+
+      // --- Object Creation ---
+      const wallOptions = { isStatic: true, render: { fillStyle: '#FFFFFF' } };
+      const boundaries = [
+        // Top wall
+        Bodies.rectangle(width / 2, 0, width, 50, { ...wallOptions }),
+        // Bottom wall
+        Bodies.rectangle(width / 2, height, width, 50, { ...wallOptions }),
+        // Left wall
+        Bodies.rectangle(0, height / 2, 50, height, { ...wallOptions }),
+        // Right wall
+        Bodies.rectangle(width, height / 2, 50, height, { ...wallOptions }),
+      ];
+
+      const coins = [];
+      const coinRadius = 20;
+      for (let i = 0; i < 5; i++) {
+        coins.push(
+          Bodies.circle(
+            Math.random() * (width - coinRadius * 2) + coinRadius,
+            Math.random() * (height / 2), // Start in the upper half
+            coinRadius,
+            { 
+              label: 'coin',
+              restitution: 0.5,
+              render: { fillStyle: '#FFFFFF' }
+            }
+          )
+        );
+      }
+
+      // --- Goal (U-Shape) Setup ---
+      const goalWidth = coinRadius * 4;
+      const goalHeight = coinRadius * 3;
+      const goalX = width / 2;
+      const goalY = height - 50; // Position near the bottom wall
+      const wallThickness = 10;
+
+      const goalWalls = [
+        // Left side of U
+        Bodies.rectangle(goalX - goalWidth / 2, goalY, wallThickness, goalHeight, { ...wallOptions }),
+        // Right side of U
+        Bodies.rectangle(goalX + goalWidth / 2, goalY, wallThickness, goalHeight, { ...wallOptions }),
+        // Bottom of U
+        Bodies.rectangle(goalX, goalY + goalHeight / 2, goalWidth + wallThickness, wallThickness, { ...wallOptions }),
+      ];
+      
+      // Sensor to detect when a coin enters the goal
+      const goalSensor = Bodies.rectangle(goalX, goalY, goalWidth - wallThickness, goalHeight, {
+        label: 'goalSensor',
+        isStatic: true,
+        isSensor: true, // Makes it a non-colliding sensor
+        render: { visible: false } // Hide the sensor visually
+      });
+
+      // --- Mouse Interaction ---
+      const mouse = Mouse.create(render.canvas);
+      const mouseConstraint = MouseConstraint.create(engine, {
+        mouse: mouse,
+        constraint: {
+          stiffness: 0.2,
+          render: {
+            visible: false,
+          },
+        },
+      });
+
+      // --- Velocity Capping to Prevent Tunneling ---
+      const maxVelocity = 20; // Set a maximum speed to prevent tunneling
+      Events.on(engine, 'beforeUpdate', () => {
+        for (const coin of coins) {
+          if (Matter.Vector.magnitude(coin.velocity) > maxVelocity) {
+            Matter.Body.setVelocity(coin, 
+              Matter.Vector.mult(Matter.Vector.normalise(coin.velocity), maxVelocity)
+            );
+          }
+        }
+      });
+
+      // --- Collision Detection ---
+      Events.on(engine, 'collisionStart', (event) => {
+        const pairs = event.pairs;
+        for (let i = 0; i < pairs.length; i++) {
+          const pair = pairs[i];
+          const bodyA = pair.bodyA;
+          const bodyB = pair.bodyB;
+
+          const isCoinAndGoal = 
+            (bodyA.label === 'coin' && bodyB.label === 'goalSensor') ||
+            (bodyA.label === 'goalSensor' && bodyB.label === 'coin');
+
+          if (isCoinAndGoal) {
+            console.log("동전 투입 성공! 메인 페이지로 이동합니다.");
+            // Here you could add logic to remove the coin or trigger other effects
+          }
+        }
+      });
+
+      // --- Add all to world and run ---
+      Composite.add(engine.world, [
+        ...boundaries,
+        ...coins,
+        ...goalWalls,
+        goalSensor,
+        mouseConstraint,
+      ]);
+      
+      render.mouse = mouse;
+      
+      const runner = Runner.create();
+      Runner.run(runner, engine);
+      Render.run(render);
+
+      // --- Cleanup on component unmount ---
+      return () => {
+        Runner.stop(runner);
+        Render.stop(render);
+        Engine.clear(engine);
+        Composite.clear(engine.world);
+        render.canvas.remove();
+        render.textures = {};
+      };
+    }).catch(error => {
+      console.error("Failed to load Matter.js", error);
+    });
+  }, []); // Empty dependency array ensures this runs only once
+
+  return <div ref={sceneRef} style={{ width: '100%', height: '100%' }} />;
+};
+
+export default Home;
